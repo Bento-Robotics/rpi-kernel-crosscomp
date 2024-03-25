@@ -1,4 +1,4 @@
-FROM debian:buster
+FROM debian:bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -8,8 +8,7 @@ RUN apt-get clean && apt-get update && \
     crossbuild-essential-armhf \
     crossbuild-essential-arm64
 
-RUN mkdir -p /root/.ssh
-RUN chmod 644 /root/.ssh
+RUN mkdir -p /root/.ssh && chmod 644 /root/.ssh
 
 RUN mkdir /build
 

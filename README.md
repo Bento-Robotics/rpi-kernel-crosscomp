@@ -1,29 +1,30 @@
 # Raspberry Pi Linux Cross-compilation Environment
 
-> **NOTE**: The old Vagrant and VirtualBox-based build environment is now stored in the [`legacy-vagrant`](legacy-vagrant/) directory.
-
 This environment can be used to [cross-compile the Raspberry Pi OS kernel](https://www.raspberrypi.org/documentation/linux/kernel/building.md) from a Linux, Windows, or Mac workstation using Docker.
 
 This build configuration has only been tested with the Raspberry Pi 4, CM4, and Pi 400, and run on macOS.
 
+Modified from [Jeff Geerling's cross-compile environment](https://github.com/geerlingguy/raspberry-pi-pcie-devices/tree/master/extras/cross-compile)
+
 ## Bringing up the build environment
 
-  1. Install Docker (and Docker Compose if not using Docker Desktop).
-  1. Bring up the cross-compile environment:
+  1. Install Podman (and podman-compose).
+  2. Bring up the cross-compile environment:
 
      ```
-     docker-compose up -d
+     podman-compose up -d
      ```
 
-  1. Log into the running container:
+  3. Log into the running container:
 
      ```
-     docker attach cross-compile
+     podman attach cross-compile
      ```
 
 You will be dropped into a shell inside the container's `/build` directory. From here you can work on compiling the kernel.
 
-> After you `exit` out of that shell, the Docker container will stop, but will not be removed. If you want to jump back into it, you can run `docker start cross-compile` and `docker attach cross-compile`.
+> [!NOTE]
+> After you `exit` out of that shell, the container will stop, but will not be removed. If you want to jump back into it, you can run `podman start -a cross-compile`.
 
 ## Compiling the Kernel
 
@@ -33,60 +34,41 @@ You will be dropped into a shell inside the container's `/build` directory. From
      git clone --depth=1 https://github.com/raspberrypi/linux
      ```
 
-  1. Run the following commands to make the .config file:
+  2. Run the following commands to make the .config file:
 
      ```
      cd linux
      make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- bcm2711_defconfig
      ```
 
-  1. (Optionally) Either edit the .config file by hand or use menuconfig:
+  3. (Optionally) Either edit the .config file by hand or use menuconfig:
 
      ```
      make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- menuconfig
      ```
 
-  1. Compile the Kernel:
+  4. Compile the Kernel:
 
      ```
      make -j8 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image modules dtbs
      ```
 
+> [!NOTE]
 > For 32-bit Pi OS, use `ARCH=arm`, `CROSS_COMPILE=arm-linux-gnueabihf-`, and `zImage` instead of `Image`.
 
-> I set the jobs argument (`-j8`) based on a bit of benchmarking on my Mac's processor. For different types of processors you may want to use more (or fewer) jobs depending on architecture and how many cores you have.
+> [!TIP]
+> I set the jobs argument (`-j8`) based on a bit of benchmarking. For different types of processors you may want to use more (or fewer) jobs depending on architecture and how many cores you have.
 
 ## Editing the kernel source inside /build/linux
 
-For the benefit of silly Mac users like me, I have a 'reverse NFS' mount available that lets me mount the linux checkout _from_ the container _to_ my Mac, meaning I can edit files from inside the container in a code editor on my Mac (like Sublime Text or some other IDE).
+  - mount container file system to host (prints mount location):
 
-This is helpful because:
+    ```
+    podman mount cross-compile
+    ```
 
-  - Most macOS installs don't have case-sensitive filesystems, so Linux codebase checkouts (which have files with duplicate filenames) will break.
-  - Docker for Mac is funny and runs in a VM, so if you mount a local (host) directory into the container, performance goes down the drain.
-
-To connect to the NFS share, create a folder like `nfs-share` on your Mac and run the command:
-
-```
-sudo mount -v -t nfs -o vers=4,port=2049 127.0.0.1:/ nfs-share
-```
-
-## Copying built Kernel via remote SSHFS filesystem
-
-It is most convenient to manage the built modules by copying them over to a running Pi, instead of doing a microSD card swap dance every time you recompile.
-
-One prerequisite for this particular method is to make sure you can mount the remote Pi's filesystem via `sshfs`.
-
-The easiest way is to run the `setup.yml` playbook:
-
-  1. Install Ansible.
-  2. Make sure the `inventory.ini` points at your Raspberry Pi (change the `127.0.0.1` IP address to the IP of the Pi on your network) and you can SSH into it.
-  3. Run `ansible-playbook setup.yml`.
-
-If you want to set it up manually instead, do this:
-
-  1. On the Pi: edit `/etc/ssh/sshd_config` and uncomment `PermitRootLogin`, then restart `sshd`.
-  2. Create an SSH key in the container, and copy the public key to the Pi's root user `authorized_keys`.
+> [!NOTE]
+> if running podman in rootless mode, run `podman unshare` first. 
 
 ### Install kernel modules and DTBs via SSHFS
 
@@ -96,6 +78,7 @@ The best option is to use the Automated script. Within the container, run the co
 PI_ADDRESS=10.0.100.170 copykernel
 ```
 
+> [!NOTE]
 > Change the `PI_ADDRESS` here to the IP address of the Pi you're managing.
 
 The script will reboot Pi, and once rebooted, your new kernel should be in place!
@@ -135,6 +118,7 @@ umount /mnt/pi-fat32
 
 Reboot the Pi and _voila!_, you're done!
 
+> [!NOTE]
 > For 32-bit Pi OS, use `ARCH=arm`, `CROSS_COMPILE=arm-linux-gnueabihf-`, `zImage` instead of `Image`, `kernel7l` instead of `kernel8`, and `arm` instead of `arm64`.
 
 ### Hard Reset on the CM4 IO Board
@@ -164,7 +148,8 @@ sudo ln -s /usr/src/linux-headers-5.10.14-v8+ /mnt/pi-ext4/lib/modules/5.10.14-v
 
 This is sometimes necessary if you're compiling modules on the Pi that require kernel headers.
 
-> Note: This... doesn't work. I opened this issue to see if I could figure out the way: [Getting headers for custom cross-compiled kernel?](https://www.raspberrypi.org/forums/viewtopic.php?f=66&t=303289).
+> [!NOTE]
+> This... doesn't work. I opened this issue to see if I could figure out the way: [Getting headers for custom cross-compiled kernel?](https://www.raspberrypi.org/forums/viewtopic.php?f=66&t=303289).
 
 ## Copying built Kernel via mounted USB drive or microSD
 
@@ -196,6 +181,7 @@ Install the kernel modules onto the drive:
 sudo env PATH=$PATH make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- INSTALL_MOD_PATH=mnt/ext4 modules_install
 ```
 
+> [!NOTE]
 > For 32-bit Pi OS, use `sudo env PATH=$PATH make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- INSTALL_MOD_PATH=mnt/ext4 modules_install`
 
 Copy the kernel and DTBs onto the drive:
@@ -207,6 +193,7 @@ sudo cp arch/arm64/boot/dts/overlays/*.dtb* mnt/fat32/overlays/
 sudo cp arch/arm64/boot/dts/overlays/README mnt/fat32/overlays/
 ```
 
+> [!NOTE]
 > For 32-bit Pi OS, use `kernel7l` instead of `kernel8`.
 
 ### Unmounting the drive
